@@ -1,0 +1,114 @@
+### Load Required packages########################################################################
+library(gdalUtils)
+library(raster) # To handle rasters
+library(rgdal) # To communicate with GDAL and handle shape files
+library(sp) # To handle shapefiles
+library(parallel) # To run code in parallel
+library(pryr)
+
+# SETTINGS  ####################################################################################### 
+#set biome
+biome<- "PANTANAL"  ### <- SET BIOME !!!!!
+
+# set working directory to ensure R can find the file we wish to import
+#setwd(choose.dir())                  ###################################<- SET FOLDER HERE !!!!!!
+
+# Shows function progression
+rasterOptions(todisk = TRUE, timer=TRUE, progress="text")
+
+#List files 
+dir()
+
+###### 2nd step - Bulk reclassify raster values ######################################################
+
+#Create a raster stack from files
+d<- raster::stack(list.files(getwd(),biome))
+
+#read-in reclassify table rules
+rct<-as.matrix(read.table("Reclass_vegnatural_V4_1.txt"))
+# provide a two column matrix ("is", "becomes") which can be useful for integer values. In that case, the right argument is automatically set to NA
+
+
+#Reclassify 
+for (f in 1 : nlayers(d)){
+  
+  
+  #Show loop iteration number 
+  print(f)
+  
+  #read-in raster band 
+  r<-raster(d, layer=f)  
+  
+  #reclassify 
+  raster::subs(r, 
+               y=data.frame(rct), 
+               format= 'GTiff', 
+               filename = paste(biome,"_vegnat_reclass_B", f, ".tif", sep=""),
+               overwrite=TRUE)
+}
+
+
+# 3rd step - Calculate yearly masks for mapbiomas rasters ###################################################
+
+#Create a raster stack from 0-1 rasters reclassified earlier
+s<- stack(list.files(getwd(),"vegnat_reclass_B"))# The bands in a RasterStack are stored as links to raster data that is located somewhere on our computer. 
+
+#create a list object to receive filenames created into next loop 
+list<-list.files(getwd(),"vegnat_reclass_B")[1]
+m<-stack(list)
+
+# Multiply 0-1 rasters to "accumulate" changes over years
+
+for (i in 1 : nlayers(s) )  #changes between years, represent n-1 years from the series
+{
+  #loop iteration
+  print(i)
+  
+  r <- raster(m, layer=i) * raster(s, layer=i+1)
+  
+  file<-paste(biome,"_naturalmask_B", i,"to",i+1, ".tif", sep="")
+  
+  writeRaster( r, 
+               format= 'GTiff',
+               filename = file ,
+               overwrite=TRUE)
+  
+  list[i+1]<-paste(file)
+  
+  m<-addLayer(r,m)
+  
+}
+
+## raster list in csv table
+write.csv(list, file=paste("lista_",biome,".csv", sep=""))  #RODAR para gravar a lista
+
+
+# 4th Step - Calculate area from natural cover for each year mask and plot this ########################
+
+# recreate the raster list from file
+tifs<-as.vector(read.table(paste("lista_",biome,".csv", sep=""), sep=",", header=T)[,2])
+
+#Create 
+m<- raster::stack(tifs)
+cellsum<-cellStats(m,'sum', na.rm=T)
+plot(cellsum)
+
+write.csv(cellsum, file=paste(biome,"_valores_anuais.csv",sep=""), sep = ",", overwrite=T)
+cellsum<-read.csv(paste(biome,"_valores_anuais.csv",sep=""), sep=",", header = T)[,2]
+
+
+# 5th Step - set window time and calculate anthropized biome proportion ##################################
+window<-24    #### time window (years)
+perda<-(cellsum[34]-cellsum[34-window])
+perc<-perda/cellsum[34-window]
+(perc*100)
+
+plot( x= seq((2018-window),2018),
+      y=cellsum[(34-window):34], 
+      ylab= "Area", 
+      xlab="")
+
+##########################################################################################
+## Thanks for: https://www.neonscience.org/dc-multiband-rasters-r 
+## https://www.ecologi.st/post/big-spatial-data/
+## https://stat.ethz.ch/pipermail/r-sig-geo/2016-February/024057.html
