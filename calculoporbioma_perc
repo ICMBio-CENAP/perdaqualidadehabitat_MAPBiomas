@@ -13,8 +13,12 @@ biome<- "PANTANAL"  ### <- SET BIOME !!!!!
 # set working directory to ensure R can find the file we wish to import
 #setwd(choose.dir())                  ###################################<- SET FOLDER HERE !!!!!!
 
-# Shows function progression
-rasterOptions(todisk = TRUE, timer=TRUE, progress="text")
+
+# create temp directory if necessary
+tmpDir(create=T)
+
+# Shows function progression and allows to write temp files into another path
+rasterOptions(todisk = TRUE, tmpdir= getwd(), timer=TRUE, progress="text")  ###<- set temp folder in "tempdir" parameter
 
 #List files 
 dir()
